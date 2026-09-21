@@ -113,6 +113,7 @@ end
 
 function BA_Matrix(ybus::Ybus)
     nr = ybus.network_reduction_data
+    _warn_impedance_correction_in_dc(nr)
     bus_ax = get_bus_axis(ybus)
     bus_lookup = get_bus_lookup(ybus)
     arc_ax = get_arc_axis(nr)

@@ -387,6 +387,26 @@ function add_branch_entries_to_ybus!(
     return
 end
 
+# The corrected form: `nr` carries the impedance-correction factors, which only the
+# `nr` methods of `ybus_branch_entries` apply.
+function add_branch_entries_to_ybus!(
+    y11::Vector{YBUS_ELTYPE},
+    y12::Vector{YBUS_ELTYPE},
+    y21::Vector{YBUS_ELTYPE},
+    y22::Vector{YBUS_ELTYPE},
+    branch_ix::Int,
+    br::PSY.ACTransmission,
+    nr::NetworkReductionData;
+    min_x_eps::Float64 = ZERO_IMPEDANCE_X_EPSILON,
+)
+    Y11, Y12, Y21, Y22 = ybus_branch_entries(br, nr; min_x_eps = min_x_eps)
+    y11[branch_ix] = Y11
+    y12[branch_ix] = Y12
+    y21[branch_ix] = Y21
+    y22[branch_ix] = Y22
+    return
+end
+
 """
     add_branch_entries_to_indexing_maps!(
         num_bus::Dict{Int, Int},
@@ -499,7 +519,7 @@ function ybus_branch_entries(
     # full-precision; callers narrow to YBUS_ELTYPE when storing.
     Y11 = Y12 = Y21 = Y22 = zero(ComplexF64)
     for br in parallel_br
-        (y11, y12, y21, y22) = ybus_branch_entries(br)
+        (y11, y12, y21, y22) = ybus_branch_entries(br, nr)
         if get_arc_tuple(br, nr) != reference
             Y11 += y22
             Y12 += y21
@@ -528,12 +548,15 @@ end
 _get_tap(::PSY.Transformer2W) = one(YBUS_ELTYPE)
 _get_tap(br::PSY.TwoWindingTransformer) = PSY.get_tap(br)
 
-"""Ybus entries for a `Transformer2W`, `TapTransformer`, or `PhaseShiftingTransformer`."""
+"""Ybus entries for a `Transformer2W`, `TapTransformer`, or `PhaseShiftingTransformer`.
+`impedance_correction` multiplies the series impedance (PSS/E impedance correction tables;
+the `nr` method reads it from the factors cached on the reduction data)."""
 function ybus_branch_entries(
     br::PSY.TwoWindingTransformer;
     min_x_eps::Float64 = ZERO_IMPEDANCE_X_EPSILON,
+    impedance_correction::Float64 = 1.0,
 )
-    Y_t = 1 / (PSY.get_r(br) + PSY.get_x(br) * 1im)
+    Y_t = 1 / ((PSY.get_r(br) + PSY.get_x(br) * 1im) * impedance_correction)
     tap = _get_tap(br) * exp(PSY.get_α(br) * 1im)
     c_tap = _get_tap(br) * exp(-1 * PSY.get_α(br) * 1im)
     y_shunt = PSY.get_primary_shunt(br)
@@ -549,15 +572,18 @@ function ybus_branch_entries(
     return (Y11 + y_shunt, Y12, Y21, Y22)
 end
 
-"""Ybus branch entries for an arc in the wye model of a `ThreeWindingTransformer`."""
+"""Ybus branch entries for an arc in the wye model of a `ThreeWindingTransformer`.
+`impedance_correction` multiplies the winding's series impedance, as for a two-winding
+transformer."""
 function ybus_branch_entries(
     tp::ThreeWindingTransformerWinding;
     min_x_eps::Float64 = ZERO_IMPEDANCE_X_EPSILON,
+    impedance_correction::Float64 = 1.0,
 )
     br = get_transformer(tp)
     winding_number = get_winding_number(tp)
     if winding_number == 1
-        Y_t = 1 / (PSY.get_r_primary(br) + PSY.get_x_primary(br) * 1im)
+        Y_t = 1 / ((PSY.get_r_primary(br) + PSY.get_x_primary(br) * 1im) * impedance_correction)
         tap = PSY.get_primary_turns_ratio(br) * exp(PSY.get_α_primary(br) * 1im)
         c_tap = PSY.get_primary_turns_ratio(br) * exp(-1 * PSY.get_α_primary(br) * 1im)
         Y11 = Y_t / abs2(tap)
@@ -571,7 +597,7 @@ function ybus_branch_entries(
         # primary bus alone gets the shunt term
         Y11 += y_shunt
     elseif winding_number == 2
-        Y_t = 1 / (PSY.get_r_secondary(br) + PSY.get_x_secondary(br) * 1im)
+        Y_t = 1 / ((PSY.get_r_secondary(br) + PSY.get_x_secondary(br) * 1im) * impedance_correction)
         tap = PSY.get_secondary_turns_ratio(br) * exp(PSY.get_α_secondary(br) * 1im)
         c_tap = PSY.get_secondary_turns_ratio(br) * exp(-1 * PSY.get_α_secondary(br) * 1im)
         Y11 = Y_t / abs2(tap)
@@ -582,7 +608,7 @@ function ybus_branch_entries(
             )
         end
     elseif winding_number == 3
-        Y_t = 1 / (PSY.get_r_tertiary(br) + PSY.get_x_tertiary(br) * 1im)
+        Y_t = 1 / ((PSY.get_r_tertiary(br) + PSY.get_x_tertiary(br) * 1im) * impedance_correction)
         tap = PSY.get_tertiary_turns_ratio(br) * exp(PSY.get_α_tertiary(br) * 1im)
         c_tap = PSY.get_tertiary_turns_ratio(br) * exp(-1 * PSY.get_α_tertiary(br) * 1im)
         Y11 = Y_t / abs2(tap)
@@ -597,6 +623,21 @@ function ybus_branch_entries(
     Y21 = (-Y_t / tap)
     Y22 = Y_t
     return (Y11, Y12, Y21, Y22)
+end
+
+# The corrected form for transformers: the factor `nr` caches for this transformer (or
+# winding) at its build-time tap or angle. Prefer it wherever `nr` is in scope; the bare
+# methods build the *uncorrected* entries.
+function ybus_branch_entries(
+    br::Union{PSY.TwoWindingTransformer, ThreeWindingTransformerWinding},
+    nr::NetworkReductionData;
+    min_x_eps::Float64 = ZERO_IMPEDANCE_X_EPSILON,
+)
+    return ybus_branch_entries(
+        br;
+        min_x_eps = min_x_eps,
+        impedance_correction = _impedance_correction_factor(br, nr),
+    )
 end
 
 """Handles ybus entries for most 2-node AC branches. The types handled here are:
@@ -620,7 +661,7 @@ function _ybus!(
     min_x_eps =
         isnothing(zir) ? ZERO_IMPEDANCE_X_EPSILON :
         get_minimum_retained_impedance(zir)
-    add_branch_entries_to_ybus!(y11, y12, y21, y22, branch_ix, br;
+    add_branch_entries_to_ybus!(y11, y12, y21, y22, branch_ix, br, nr;
         min_x_eps = min_x_eps)
     return
 end
@@ -677,7 +718,8 @@ function _ybus!(
         primary_ix, star_ix = get_bus_indices(primary_star_arc, num_bus, nr)
         fb[offset_ix + ix + n_entries] = primary_ix
         tb[offset_ix + ix + n_entries] = star_ix
-        (Y11, Y12, Y21, Y22) = ybus_branch_entries(ThreeWindingTransformerWinding(br, 1))
+        (Y11, Y12, Y21, Y22) =
+            ybus_branch_entries(ThreeWindingTransformerWinding(br, 1), nr)
         y11[offset_ix + ix + n_entries] = Y11
         y12[offset_ix + ix + n_entries] = Y12
         y21[offset_ix + ix + n_entries] = Y21
@@ -688,7 +730,8 @@ function _ybus!(
         secondary_ix, star_ix = get_bus_indices(secondary_star_arc, num_bus, nr)
         fb[offset_ix + ix + n_entries] = secondary_ix
         tb[offset_ix + ix + n_entries] = star_ix
-        (Y11, Y12, Y21, Y22) = ybus_branch_entries(ThreeWindingTransformerWinding(br, 2))
+        (Y11, Y12, Y21, Y22) =
+            ybus_branch_entries(ThreeWindingTransformerWinding(br, 2), nr)
         y11[offset_ix + ix + n_entries] = Y11
         y12[offset_ix + ix + n_entries] = Y12
         y21[offset_ix + ix + n_entries] = Y21
@@ -699,7 +742,8 @@ function _ybus!(
         tertiary_ix, star_ix = get_bus_indices(tertiary_star_arc, num_bus, nr)
         fb[offset_ix + ix + n_entries] = tertiary_ix
         tb[offset_ix + ix + n_entries] = star_ix
-        (Y11, Y12, Y21, Y22) = ybus_branch_entries(ThreeWindingTransformerWinding(br, 3))
+        (Y11, Y12, Y21, Y22) =
+            ybus_branch_entries(ThreeWindingTransformerWinding(br, 3), nr)
         y11[offset_ix + ix + n_entries] = Y11
         y12[offset_ix + ix + n_entries] = Y12
         y21[offset_ix + ix + n_entries] = Y21
@@ -1015,6 +1059,7 @@ function Ybus(
     for (ix, b) in enumerate(bus_ax)
         bus_lookup[b] = ix
     end
+    build_impedance_correction_factors!(nr, sys)
     branches = _get_ybus_two_terminal_ac_branches(sys)
     transformer_3W =
         _get_filtered_components(PSY.ThreeWindingTransformer, sys, PSY.get_available)
@@ -2319,7 +2364,7 @@ function add_segment_to_ybus!(
     segment_orientation::Symbol,
     nr::NetworkReductionData,
 )
-    (Y11, Y12, Y21, Y22) = ybus_branch_entries(segment)
+    (Y11, Y12, Y21, Y22) = ybus_branch_entries(segment, nr)
     push!(fb, ix)
     push!(tb, ix + 1)
     if segment_orientation == :FromTo

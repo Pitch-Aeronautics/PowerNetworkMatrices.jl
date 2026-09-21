@@ -26,18 +26,19 @@ function _scaled_pi_model(
 end
 
 """
-    _compute_parallel_partial_ybus_delta(bp, delta_b) -> NTuple{4, YBUS_ELTYPE}
+    _compute_parallel_partial_ybus_delta(bp, nr, delta_b) -> NTuple{4, YBUS_ELTYPE}
 
 Compute the Pi-model Ybus delta for a partial outage on a parallel branch group.
 Finds the circuit whose susceptance matches `delta_b` and returns its negated Pi-model entries.
 """
 function _compute_parallel_partial_ybus_delta(
     bp::AbstractBranchesParallel,
+    nr::NetworkReductionData,
     delta_b::Float64,
 )::NTuple{4, YBUS_ELTYPE}
     for br in bp.branches
         if _is_full_outage(delta_b, get_series_susceptance(br))
-            return _negated_pi_model(ybus_branch_entries(br))
+            return _negated_pi_model(ybus_branch_entries(br, nr))
         end
     end
     error(
@@ -47,12 +48,19 @@ function _compute_parallel_partial_ybus_delta(
 end
 
 # Direct arc: full outage negates the Pi-model; otherwise scale it by `delta_b / b_arc`.
+# `b_arc` must be what BA holds for the arc. For an impedance-corrected transformer that is
+# the corrected Ybus-derived value (BA reads a symmetric arc off Ybus), not the component
+# reactance, which would scale a full outage to 1/factor of the transformer instead of
+# negating it. Uncorrected arcs keep the component value.
 function _direct_arc_ybus_delta(
     br::PSY.ACTransmission,
+    nr::NetworkReductionData,
     delta_b::Float64,
 )::NTuple{4, YBUS_ELTYPE}
-    b_arc = get_series_susceptance(br)
-    entries = ybus_branch_entries(br)
+    entries = ybus_branch_entries(br, nr)
+    b_arc =
+        _impedance_corrected(br, nr) ? _ba_arc_susceptance(entries, br) :
+        get_series_susceptance(br)
     if _is_full_outage(delta_b, b_arc)
         return _negated_pi_model(entries)
     end
@@ -65,10 +73,14 @@ function _parallel_arc_ybus_delta(
     nr::NetworkReductionData,
     delta_b::Float64,
 )::NTuple{4, YBUS_ELTYPE}
-    if _is_full_outage(delta_b, get_series_susceptance(bp))
-        return _negated_pi_model(ybus_branch_entries(bp, nr))
+    entries = ybus_branch_entries(bp, nr)
+    b_arc =
+        _impedance_corrected(bp, nr) ? _ba_arc_susceptance(entries, bp) :
+        get_series_susceptance(bp)
+    if _is_full_outage(delta_b, b_arc)
+        return _negated_pi_model(entries)
     end
-    return _compute_parallel_partial_ybus_delta(bp, delta_b)
+    return _compute_parallel_partial_ybus_delta(bp, nr, delta_b)
 end
 
 # Series-reduced arc: only full outage of the equivalent chain is supported.
@@ -90,16 +102,21 @@ end
 # 3-winding transformer arc: only full outage of the winding is supported.
 function _transformer3W_arc_ybus_delta(
     tr::ThreeWindingTransformerWinding,
+    nr::NetworkReductionData,
     arc_tuple::Tuple{Int, Int},
     delta_b::Float64,
 )::NTuple{4, YBUS_ELTYPE}
-    if !_is_full_outage(delta_b, get_series_susceptance(tr))
+    entries = ybus_branch_entries(tr, nr)
+    b_arc =
+        _impedance_corrected(tr, nr) ? _ba_arc_susceptance(entries, tr) :
+        get_series_susceptance(tr)
+    if !_is_full_outage(delta_b, b_arc)
         error(
             "Partial Ybus delta is not supported on 3-winding transformer arcs. " *
             "Arc $(arc_tuple), Δb=$(delta_b).",
         )
     end
-    return _negated_pi_model(ybus_branch_entries(tr))
+    return _negated_pi_model(entries)
 end
 
 """
@@ -114,7 +131,7 @@ function _compute_arc_ybus_delta(
     delta_b::Float64,
 )::NTuple{4, YBUS_ELTYPE}
     if haskey(nr.direct_branch_map, arc_tuple)
-        return _direct_arc_ybus_delta(nr.direct_branch_map[arc_tuple], delta_b)
+        return _direct_arc_ybus_delta(nr.direct_branch_map[arc_tuple], nr, delta_b)
     elseif haskey(nr.parallel_branch_map, arc_tuple)
         return _parallel_arc_ybus_delta(nr.parallel_branch_map[arc_tuple], nr, delta_b)
     elseif haskey(nr.series_branch_map, arc_tuple)
@@ -127,6 +144,7 @@ function _compute_arc_ybus_delta(
     elseif haskey(nr.transformer3W_map, arc_tuple)
         return _transformer3W_arc_ybus_delta(
             nr.transformer3W_map[arc_tuple],
+            nr,
             arc_tuple,
             delta_b,
         )
@@ -368,7 +386,7 @@ function _classify_outage_component!(
         arc_idx = arc_lookup[arc_tuple]
         b_arc = arc_susceptances[arc_idx]
         tr = nr.transformer3W_map[arc_tuple]
-        Y11, Y12, Y21, Y22 = ybus_branch_entries(tr)
+        Y11, Y12, Y21, Y22 = ybus_branch_entries(tr, nr)
         push!(
             direct_mods,
             ArcModification(
@@ -559,7 +577,7 @@ function _classify_branch_modification(
         arc_idx = arc_lookup[arc_tuple]
         b_arc = arc_susceptances[arc_idx]
         tr = nr.transformer3W_map[arc_tuple]
-        Y11, Y12, Y21, Y22 = ybus_branch_entries(tr)
+        Y11, Y12, Y21, Y22 = ybus_branch_entries(tr, nr)
         return [
             ArcModification(
                 arc_idx, -b_arc,

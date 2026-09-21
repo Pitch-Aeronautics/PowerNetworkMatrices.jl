@@ -134,6 +134,7 @@ network reduction algorithms.
 - `component_to_reduction_name_map::Dict{Type, Dict{String, String}}`: Lazily filled with the call to [`populate_branch_maps_by_type!`](@ref), maps component names to the names of the reduction entries used in `name_to_arc_map`.
 - `filters_applied::Dict{Type, Function}`: Filters applied when populating branch maps by type
 - `direct_branch_name_map::Dict{String, Tuple{Int, Int}}`: Lazily filled, maps branch names to their corresponding arc tuples for direct branches
+- `impedance_correction_factors::Dict{Tuple{Base.UUID, Int}, Float64}`: Series-impedance multipliers from `PSY.ImpedanceCorrectionData`, keyed by `(transformer UUID, winding)` where the winding is the `PSY.WindingCategory` code (`0` for a two-winding transformer). Built once by [`build_impedance_correction_factors!`](@ref); empty when the system defines no correction tables
 
 Each field has a like-named `get_*` accessor (e.g. `get_irreducible_buses`,
 `get_removed_buses`); [`get_bus_reduction_map`](@ref) and [`get_reductions`](@ref) are
@@ -187,6 +188,8 @@ keys, and Ward survivors are the `study_buses`.
     filters_applied = Dict{Type, Function}() #Filters applied when populating branch maps by type
     direct_branch_name_map::Dict{String, Tuple{Int, Int}} =
         Dict{String, Tuple{Int, Int}}()
+    impedance_correction_factors::Dict{Tuple{Base.UUID, Int}, Float64} =
+        Dict{Tuple{Base.UUID, Int}, Float64}()
 end
 
 function add_to_map(device::T, filters::Dict) where {T <: PSY.ACTransmission}
