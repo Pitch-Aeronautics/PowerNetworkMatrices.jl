@@ -253,6 +253,13 @@ reverse lookup dictionaries for efficient access.
 - If arc already has parallel branches, adds to existing set
 - Otherwise creates new direct mapping
 - Maintains reverse lookup consistency
+
+Every branch keeps its own entry. A type in `SKIP_PARALLEL_REDUCTION_TYPES` (a phase shifter)
+is mapped direct while it is alone on its arc; when it shares the arc with another branch, the
+branches are a parallel set like any other, since the direct map holds one branch per arc and
+would otherwise keep only the last (the Y-bus, stamped per branch, was right, but the overwritten
+branch had no forward entry and no flow). Such a set has a physical equivalent only when its
+phase shifts agree (`get_equivalent_physical_branch_parameters` refuses one that does not).
 """
 function add_to_branch_maps!(
     nr::NetworkReductionData,
@@ -264,12 +271,10 @@ function add_to_branch_maps!(
     parallel_branch_map = get_parallel_branch_map(nr)
     reverse_parallel_branch_map = get_reverse_parallel_branch_map(nr)
     arc_tuple = get_arc_tuple(arc, nr)
-    if haskey(parallel_branch_map, arc_tuple) && typeof(br) ∉ SKIP_PARALLEL_REDUCTION_TYPES
+    if haskey(parallel_branch_map, arc_tuple)
         _push_parallel_branch!(parallel_branch_map, arc_tuple, br)
         reverse_parallel_branch_map[br] = arc_tuple
-    elseif haskey(direct_branch_map, arc_tuple) &&
-           typeof(direct_branch_map[arc_tuple]) ∉ SKIP_PARALLEL_REDUCTION_TYPES &&
-           typeof(br) ∉ SKIP_PARALLEL_REDUCTION_TYPES
+    elseif haskey(direct_branch_map, arc_tuple)
         corresponding_branch = direct_branch_map[arc_tuple]
         delete!(direct_branch_map, arc_tuple)
         delete!(reverse_direct_branch_map, corresponding_branch)

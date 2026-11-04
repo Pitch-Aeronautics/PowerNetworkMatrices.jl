@@ -17,6 +17,9 @@ const AUTO_TOLERANCE_BUS_LIMIT = 2000
 
 DEFAULT_LODF_CHUNK_SIZE = 18_000
 
+# Phase-shifting types. `add_to_branch_maps!` no longer consults this list: a phase shifter
+# sharing its arc with another branch forms a parallel set like any branch, instead of
+# overwriting the arc's direct entry (T68). Kept for callers that test membership.
 SKIP_PARALLEL_REDUCTION_TYPES = [
     PSY.PhaseShiftingTransformer,
     ThreeWindingTransformerWinding{PSY.PhaseShiftingTransformer3W},
