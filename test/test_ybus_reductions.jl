@@ -129,12 +129,22 @@ end
     )
     @test Set(A.axes[2]) == Set(keys(nrd.bus_reduction_map))
     ybus_full = Ybus(sys)
-    # sqrt(eps) tolerance: reduced Ybus goes through a dense solve, so composed
-    # numerical error is expected up to O(sqrt(eps)) for well-conditioned systems.
+    # The eliminated bus 107 carries line charging, so the chain's equivalent is the Kron
+    # reduction -y1*y2/(y1 + y2 + ysh), not the bare series sum of the two impedances
+    # (they differ by ~3e-8 relative here). sqrt(eps) tolerance: the reduced Ybus goes
+    # through a dense solve.
+    y1 = -ybus_full[108, 107]
+    y2 = -ybus_full[107, 1001]
+    ysh = ybus_full[107, 107] - y1 - y2
+    @test isapprox(
+        ybus[108, 1001],
+        -(y1 * y2) / (y1 + y2 + ysh);
+        rtol = sqrt(eps(real(YBUS_ELTYPE))),
+    )
     @test isapprox(
         ybus[108, 1001]^-1,
         (ybus_full[108, 107])^-1 + ybus_full[107, 1001]^-1;
-        rtol = sqrt(eps(real(YBUS_ELTYPE))),
+        rtol = 1e-6,
     )
 end
 

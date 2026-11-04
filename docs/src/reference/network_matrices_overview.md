@@ -47,7 +47,7 @@ Build cost is for a network of ``N_b`` buses and ``N_a`` arcs.
 
 Notes on the taxonomy:
 
-  - `Ybus` is complex-valued (`YBUS_ELTYPE`, i.e. `ComplexF32`); all other numeric
+  - `Ybus` is complex-valued (`YBUS_ELTYPE`, i.e. `ComplexF64`); all other numeric
     matrices are real (`Float64`). `IncidenceMatrix` / `AdjacencyMatrix` store signed
     `Int8` topology.
   - `PTDF` and `LODF` store their data **transposed** internally; `getindex`

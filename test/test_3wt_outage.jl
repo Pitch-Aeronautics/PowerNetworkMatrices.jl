@@ -128,7 +128,7 @@ end
     # Compare entries for every real bus pair present in the surgery system.
     bus_ax_ref = PNM.get_bus_axis(ybus_ref)
     for i in bus_ax_ref, j in bus_ax_ref
-        # ComplexF32 entries: compare with float32-appropriate relative tol.
+        # Loose tolerance kept from when entries were ComplexF32.
         @test isapprox(
             ybus_mod[lookup_mod[i], lookup_mod[j]],
             ref_data[lookup_ref[i], lookup_ref[j]];

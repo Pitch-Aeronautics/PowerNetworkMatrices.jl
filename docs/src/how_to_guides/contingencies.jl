@@ -139,7 +139,7 @@ arc_mod = ArcModification(arc_index, -5.0)   # a partial Δb on a direct arc
 # [`get_bus_lookup`](@ref) returns:
 
 bus_index = get_bus_lookup(vmodf)[3]
-shunt_mod = ShuntModification(bus_index, ComplexF32(-0.1im))
+shunt_mod = ShuntModification(bus_index, ComplexF64(-0.1im))
 
 # Combining the two gives one [`NetworkModification`](@ref) — the constructor takes a
 # label, the arc changes, the shunt changes, and whether the modification islands the

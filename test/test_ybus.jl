@@ -103,3 +103,36 @@ end
         r"Setting the system unit base from NATURAL_UNITS to SYSTEM_BASE for matrix construction",
     ) match_mode = :any Ybus(sys)
 end
+
+@testset "Ybus stores ComplexF64: a near-zero-impedance branch is exact to 1e-9" begin
+    # x = 1e-4 pu gives |y| ≈ 1e4 pu. In ComplexF32 the stored entry would carry a
+    # relative error of ~6e-8 (≈ 6e-4 pu, 0.06 MVA at 1 pu voltage), larger than a
+    # 0.01 MVA mismatch bar; in ComplexF64 it is exact to rounding. r > 0 keeps the
+    # branch out of the always-on zero-impedance reduction (which needs r == 0).
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    line = get_component(Line, sys, "1")
+    from_no = get_number(get_from(get_arc(line)))
+    to_no = get_number(get_to(get_arc(line)))
+    y_old = 1 / complex(get_r(line), get_x(line))
+    yb_old = Ybus(sys)
+    @test eltype(yb_old.data) == ComplexF64
+    @test YBUS_ELTYPE == ComplexF64
+
+    r, x = 1e-6, 1e-4
+    set_r!(line, r)
+    set_x!(line, x)
+    y_new = 1 / complex(r, x)
+    yb = Ybus(sys)
+    @test eltype(yb.data) == ComplexF64
+    @test size(yb) == size(yb_old)
+    # Off-diagonal entries: −y for an untapped line with no parallel circuit.
+    @test isapprox(yb[from_no, to_no], -y_new; rtol = 1e-9)
+    @test isapprox(yb[to_no, from_no], -y_new; rtol = 1e-9)
+    # Diagonal entries: the change is exactly the series admittance's change.
+    for bus_no in (from_no, to_no)
+        expected = yb_old[bus_no, bus_no] - y_old + y_new
+        @test isapprox(yb[bus_no, bus_no], expected; rtol = 1e-9)
+    end
+    # The same entry rounded to ComplexF32 misses the bar, so the test discriminates.
+    @test !isapprox(ComplexF64(ComplexF32(-y_new)), -y_new; rtol = 1e-9)
+end

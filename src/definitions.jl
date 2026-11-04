@@ -1,4 +1,4 @@
-const YBUS_ELTYPE = ComplexF32
+const YBUS_ELTYPE = ComplexF64
 
 const KiB = 1024
 const MiB = KiB * KiB

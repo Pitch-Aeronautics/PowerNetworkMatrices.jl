@@ -7,18 +7,18 @@ Full outage: `delta_b = -b_arc`. Single circuit on double-circuit: `delta_b = -b
 # Fields
 - `arc_index::Int`: Index of the modified arc in the network matrix.
 - `delta_b::Float64`: Change in susceptance (negative for an outage or reduction).
-- `delta_y11::ComplexF32`: Change in Pi-model self-admittance at the from bus.
-- `delta_y12::ComplexF32`: Change in Pi-model mutual admittance (from -> to).
-- `delta_y21::ComplexF32`: Change in Pi-model mutual admittance (to -> from).
-- `delta_y22::ComplexF32`: Change in Pi-model self-admittance at the to bus.
+- `delta_y11::YBUS_ELTYPE`: Change in Pi-model self-admittance at the from bus.
+- `delta_y12::YBUS_ELTYPE`: Change in Pi-model mutual admittance (from -> to).
+- `delta_y21::YBUS_ELTYPE`: Change in Pi-model mutual admittance (to -> from).
+- `delta_y22::YBUS_ELTYPE`: Change in Pi-model self-admittance at the to bus.
 """
 struct ArcModification
     arc_index::Int
     delta_b::Float64
-    delta_y11::ComplexF32
-    delta_y12::ComplexF32
-    delta_y21::ComplexF32
-    delta_y22::ComplexF32
+    delta_y11::YBUS_ELTYPE
+    delta_y12::YBUS_ELTYPE
+    delta_y21::YBUS_ELTYPE
+    delta_y22::YBUS_ELTYPE
 end
 
 """
@@ -38,11 +38,11 @@ that affect the Ybus but not DC sensitivity factors.
 
 # Fields
 - `bus_index::Int`: Index of the bus in the network matrix.
-- `delta_y::ComplexF32`: Change in shunt admittance (negative for an outage).
+- `delta_y::YBUS_ELTYPE`: Change in shunt admittance (negative for an outage).
 """
 struct ShuntModification
     bus_index::Int
-    delta_y::ComplexF32
+    delta_y::YBUS_ELTYPE
 end
 
 """
